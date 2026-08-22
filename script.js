@@ -9,6 +9,8 @@ let audio = new Audio();
 audio.preload = "metadata";
 audio.volume = 0.8;
 
+let sources = [];
+let srcIndex = 0;
 let tracks = [];
 let current = -1;
 let shuffle = false;
@@ -55,6 +57,7 @@ const els = {
   cassette: $("#cassette"),
   list: $("#playlist"),
   count: $("#playlistCount"),
+  sources: $("#sources"),
 };
 
 function fmt(t) {
@@ -86,6 +89,53 @@ function updateMode() {
   els.shuf.classList.toggle("active", shuffle);
   els.rep.classList.toggle("active", repeat !== 0);
   els.rep.textContent = repeat === 0 ? "REP OFF" : repeat === 1 ? "REP ALL" : "REP ONE";
+}
+
+function syncActiveSource() {
+  const s = sources[srcIndex];
+  if (s) {
+    s.tracks = tracks;
+    s.current = current;
+  }
+}
+
+function selectSource(i) {
+  if (!sources[i] || i === srcIndex) return;
+  syncActiveSource();
+  audio.pause();
+  audio.removeAttribute("src");
+  try { audio.load(); } catch (e) {}
+  seeking = false;
+  srcIndex = i;
+  tracks = sources[i].tracks;
+  current = sources[i].current;
+  els.cur.textContent = "00:00";
+  els.dur.textContent = "--:--";
+  els.seek.value = 0;
+  renderSources();
+  renderPlaylist();
+  setNowPlayingUI();
+}
+
+function renderSources() {
+  els.sources.innerHTML = "";
+  if (!sources.length) return;
+  sources.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "btn tiny" + (i === srcIndex ? " active" : "");
+    b.textContent = s.label;
+    b.title = s.label + " (" + s.tracks.length + " songs)";
+    b.addEventListener("click", () => selectSource(i));
+    els.sources.appendChild(b);
+  });
+}
+
+function sourceLabel(fileList) {
+  const rel = fileList[0] && fileList[0].webkitRelativePath;
+  if (rel && rel.includes("/")) {
+    return rel.split("/")[0].toUpperCase().slice(0, 16);
+  }
+  return "LOADED FILES";
 }
 
 function renderPlaylist() {
@@ -318,6 +368,7 @@ function togglePlay() {
   if (!tracks.length) return;
   if (current === -1) return play(0);
   if (audio.paused) {
+    if (!audio.getAttribute("src")) return play(current);
     initAudioGraph();
     if (actx && actx.state === "suspended") actx.resume();
     audio.play().catch(() => {});
@@ -368,21 +419,25 @@ function setNowPlayingUI() {
     t.ext.slice(1).toUpperCase() +
     " AUDIO" +
     (fetchBlocked && !t.file ? " \u00B7 DROP FOLDER FOR LIVE BARS" : "");
-  document.title = "\u25B6 " + t.name + " — JUKEBOX";
+  document.title = (audio.paused ? "" : "\u25B6 ") + t.name + " — JUKEBOX";
 }
 
 function addFiles(fileList) {
   const files = [...fileList].filter((f) => AUDIO_EXT.test(f.name));
   if (!files.length) return;
-  tracks.forEach((t) => t.url.startsWith("blob:") && URL.revokeObjectURL(t.url));
-  tracks = files.map((f) => ({
+  syncActiveSource();
+  const t = files.map((f) => ({
     name: cleanName(f.name),
     ext: "." + f.name.split(".").pop().toLowerCase(),
     url: URL.createObjectURL(f),
     file: f,
     dur: null,
   }));
+  sources.push({ label: sourceLabel(files), tracks: t, current: -1 });
+  srcIndex = sources.length - 1;
+  tracks = t;
   current = -1;
+  renderSources();
   renderPlaylist();
   play(0);
 }
@@ -402,7 +457,10 @@ els.rep.addEventListener("click", () => {
 });
 
 els.load.addEventListener("click", () => els.fileInput.click());
-els.fileInput.addEventListener("change", () => addFiles(els.fileInput.files));
+els.fileInput.addEventListener("change", () => {
+  addFiles(els.fileInput.files);
+  els.fileInput.value = "";
+});
 
 els.vol.addEventListener("input", () => {
   audio.volume = parseFloat(els.vol.value);
@@ -550,17 +608,23 @@ function draw() {
 }
 
 function boot() {
+  let libTracks = [];
   if (typeof MANIFEST !== "undefined" && Array.isArray(MANIFEST)) {
-    tracks = MANIFEST.filter((f) => AUDIO_EXT.test(f)).map((f) => ({
+    libTracks = MANIFEST.filter((f) => AUDIO_EXT.test(f)).map((f) => ({
       name: cleanName(f),
       ext: "." + f.split(".").pop().toLowerCase(),
       url: "Music/" + f.split("/").map(encodeURIComponent).join("/"),
       dur: null,
     }));
   }
+  sources = [{ label: "MUSIC LIB", tracks: libTracks, current: -1 }];
+  srcIndex = 0;
+  tracks = libTracks;
+  current = -1;
   applyAccent();
   updateMode();
   sizeCanvas();
+  renderSources();
   renderPlaylist();
   setNowPlayingUI();
   draw();
