@@ -607,6 +607,17 @@ function draw() {
   }
 }
 
+function pruneMissing(list) {
+  if (location.protocol === "file:") return Promise.resolve(list);
+  return Promise.all(
+    list.map((t) =>
+      fetch(t.url, { method: "HEAD" })
+        .then((r) => (r.ok ? t : null))
+        .catch(() => t)
+    )
+  ).then((out) => out.filter(Boolean));
+}
+
 function boot() {
   let libTracks = [];
   if (typeof MANIFEST !== "undefined" && Array.isArray(MANIFEST)) {
@@ -628,6 +639,20 @@ function boot() {
   renderPlaylist();
   setNowPlayingUI();
   draw();
+  pruneMissing(libTracks).then((kept) => {
+    if (
+      kept.length === libTracks.length ||
+      srcIndex !== 0 ||
+      current !== -1 ||
+      audio.getAttribute("src")
+    ) {
+      return;
+    }
+    sources[0].tracks = kept;
+    tracks = kept;
+    renderPlaylist();
+    setNowPlayingUI();
+  });
 }
 
 boot();
