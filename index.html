@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JUKEBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <main class="machine">
+
+    <header class="marquee">
+      <h1>JUKEBOX</h1>
+      <div class="tagline">MONO&middot;RETRO&middot;LOUD</div>
+    </header>
+
+    <section class="screen">
+      <div class="screen-top">
+        <span id="trackIndex">--/--</span>
+        <span class="blink">NOW PLAYING</span>
+        <span id="modeLabel">NORMAL</span>
+      </div>
+
+      <div class="screen-title" id="trackTitle">INSERT TUNES</div>
+      <div class="screen-sub" id="trackMeta">drop audio files or hit LOAD FOLDER</div>
+
+      <canvas id="viz"></canvas>
+
+      <div class="transport">
+        <span id="timeCur">00:00</span>
+        <input type="range" id="seek" min="0" max="100" value="0" step="0.1" aria-label="Seek">
+        <span id="timeDur">00:00</span>
+      </div>
+    </section>
+
+    <section class="deck">
+      <div class="cassette" id="cassette">
+        <div class="reel left"><i></i><i></i><i></i></div>
+        <div class="window"></div>
+        <div class="reel right"><i></i><i></i><i></i></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn small" id="prevBtn">PREV</button>
+        <button class="btn big" id="playBtn">PLAY</button>
+        <button class="btn small" id="nextBtn">NEXT</button>
+      </div>
+
+      <div class="sub-controls">
+        <button class="btn tiny" id="shufBtn">SHUF</button>
+        <button class="btn tiny" id="repBtn">REP OFF</button>
+        <button class="btn tiny accent-btn" id="loadBtn">LOAD FOLDER</button>
+        <label class="vol">
+          VOL
+          <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8" aria-label="Volume">
+        </label>
+      </div>
+    </section>
+
+    <section class="playlist-wrap">
+      <div class="playlist-head">
+        <span>TRACKLIST</span>
+        <span id="playlistCount">0 SONGS</span>
+      </div>
+      <ul id="playlist"></ul>
+    </section>
+
+    <footer class="hint">DRAG &amp; DROP AUDIO FILES ANYWHERE ON THIS PAGE</footer>
+
+    <input type="file" id="fileInput" webkitdirectory hidden>
+  </main>
+
+  <script src="manifest.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
