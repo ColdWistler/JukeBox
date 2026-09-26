@@ -1,0 +1,77 @@
+name: Update Music Manifest
+
+# script.js builds the playlist from the hardcoded MANIFEST array in
+# manifest.js, so that file has to be regenerated whenever Music/ changes.
+# This workflow does it automatically on every push to main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Music/**"
+      - "gen-manifest.mjs"
+      - ".github/workflows/update-manifest.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+# Never let two manifest updates race each other.
+concurrency:
+  group: update-music-manifest
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Regenerate manifest.js from Music/
+        run: node gen-manifest.mjs
+
+      - name: Commit manifest.js if it changed
+        id: commit
+        run: |
+          if git diff --quiet -- manifest.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "manifest.js already matches Music/ — nothing to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.js
+          git commit -m "chore: regenerate music manifest"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN does not always kick off a legacy
+      # GitHub Pages build, so confirm one was started and request it
+      # explicitly if not. Without this, the site can serve a stale
+      # manifest.js even though the commit landed.
+      - name: Make sure Pages picks up the new commit
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit_time=$(git log -1 --format=%ct)
+          for i in $(seq 1 12); do
+            started=$(gh api "repos/${{ github.repository }}/pages/builds" \
+              --jq 'map(.created_at) | max // ""' 2>/dev/null || true)
+            if [ -n "$started" ] && \
+               [ "$(date -d "$started" +%s 2>/dev/null || echo 0)" -ge "$commit_time" ]; then
+              echo "Pages build already started for this commit"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "No Pages build detected — requesting one explicitly"
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" \
+            -H "Accept: application/vnd.github+json" || \
+            echo "warning: could not request a Pages build; the commit is pushed regardless"
