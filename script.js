@@ -618,20 +618,81 @@ function pruneMissing(list) {
   ).then((out) => out.filter(Boolean));
 }
 
-function boot() {
-  let libTracks = [];
-  if (typeof MANIFEST !== "undefined" && Array.isArray(MANIFEST)) {
-    libTracks = MANIFEST.filter((f) => AUDIO_EXT.test(f)).map((f) => ({
-      name: cleanName(f),
-      ext: "." + f.split(".").pop().toLowerCase(),
-      url: "Music/" + f.split("/").map(encodeURIComponent).join("/"),
-      dur: null,
+// "Bijee" -> "BIJEE", "old_mix" -> "OLD MIX"
+function folderLabel(seg) {
+  return seg.replace(/[_-]+/g, " ").trim().toUpperCase().slice(0, 16);
+}
+
+function trackFromPath(path) {
+  const file = path.split("/").pop();
+  return {
+    name: cleanName(file),
+    ext: "." + file.split(".").pop().toLowerCase(),
+    url: "Music/" + path.split("/").map(encodeURIComponent).join("/"),
+    dur: null,
+  };
+}
+
+// One source per top-level folder in Music/. Root-level songs become the main
+// "MUSIC LIB" tab, and each subfolder becomes its own "<FOLDER> MIX" tab, so
+// dropping songs into a folder is all it takes to hand someone their own
+// playlist. The root tab always exists, even with nothing in it, so the tab
+// strip keeps a stable shape.
+function manifestSources() {
+  const list =
+    typeof MANIFEST !== "undefined" && Array.isArray(MANIFEST) ? MANIFEST : [];
+  const groups = new Map();
+  list
+    .filter((f) => AUDIO_EXT.test(f))
+    .forEach((f) => {
+      const key = f.includes("/") ? f.split("/")[0] : "";
+      if (!groups.has(key)) groups.set(key, { key, tracks: [] });
+      groups.get(key).tracks.push(trackFromPath(f));
+    });
+  if (!groups.has("")) groups.set("", { key: "", tracks: [] });
+
+  return [...groups.values()]
+    .sort((a, b) =>
+      a.key === b.key ? 0 : !a.key ? -1 : !b.key ? 1 : a.key.localeCompare(b.key)
+    )
+    .map((g) => ({
+      label: g.key ? folderLabel(g.key) + " MIX" : "MUSIC LIB",
+      tracks: g.tracks,
+      current: -1,
     }));
-  }
-  sources = [{ label: "MUSIC LIB", tracks: libTracks, current: -1 }];
+}
+
+// The manifest says what should be in Music/, but a song can be deployed and
+// missing from it. HEAD-check every track in the background and drop the dead
+// rows -- but only while the listener is still idle. Once they've pressed play
+// or dropped a folder of their own, what they are looking at wins.
+function pruneBootSources(groups) {
+  if (location.protocol === "file:") return;
+  Promise.all(groups.map((g) => pruneMissing(g.tracks))).then((results) => {
+    if (sources.length !== groups.length) return; // a local folder was added
+    if (current !== -1 || audio.getAttribute("src")) return;
+    let changed = false;
+    let activeChanged = false;
+    groups.forEach((g, i) => {
+      if (results[i].length === g.tracks.length) return;
+      g.tracks = results[i];
+      changed = true;
+      if (i === srcIndex) activeChanged = true;
+    });
+    if (!changed) return;
+    renderSources(); // tab tooltips carry the per-tab song count
+    if (!activeChanged) return;
+    tracks = sources[srcIndex].tracks;
+    renderPlaylist();
+    setNowPlayingUI();
+  });
+}
+
+function boot() {
+  sources = manifestSources();
   srcIndex = 0;
-  tracks = libTracks;
-  current = -1;
+  tracks = sources[0].tracks;
+  current = sources[0].current;
   applyAccent();
   updateMode();
   sizeCanvas();
@@ -639,20 +700,7 @@ function boot() {
   renderPlaylist();
   setNowPlayingUI();
   draw();
-  pruneMissing(libTracks).then((kept) => {
-    if (
-      kept.length === libTracks.length ||
-      srcIndex !== 0 ||
-      current !== -1 ||
-      audio.getAttribute("src")
-    ) {
-      return;
-    }
-    sources[0].tracks = kept;
-    tracks = kept;
-    renderPlaylist();
-    setNowPlayingUI();
-  });
+  pruneBootSources(sources);
 }
 
 boot();
